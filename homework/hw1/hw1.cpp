@@ -6,7 +6,7 @@
 #include <vector>
 #include <iostream>
 using namespace std;
-const int N = 1<<26;  // FIXME must be power of 2 for now
+const int N = 2<<26;  // FIXME must be power of 2 for now
 
 typedef vector<int> Data;
 
@@ -17,7 +17,7 @@ public:
     }
 
     ~Heaper() {
-        delete[] interior;
+        delete interior;
     }
 
 protected:
@@ -65,8 +65,9 @@ public:
     }
 
     void prefixSums(Data* output) {
-
+        prefixSums(0, 0, output);
     }
+
 
 private:
     void calcSum(int i) {
@@ -81,7 +82,18 @@ private:
         interior->at(i) = value(left(i)) + value(right(i));
     }
 
+    void prefixSums(int i, int priorSum, Data* output) {
+        if (isLeaf(i)) {
+            output->at(i - (n - 1)) = priorSum + value(i);
+            return;
+        }
 
+        const int leftChild = left(i);
+        const int rightChild = right(i);
+
+        prefixSums(leftChild, priorSum, output);
+        prefixSums(rightChild, priorSum + value(leftChild), output);
+    }
 
 };
 
