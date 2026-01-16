@@ -16,7 +16,7 @@ public:
         interior = new Data(n - 1, 0);
     }
 
-    ~Heaper() {
+    virtual ~Heaper() {
         delete interior;
     }
 
@@ -103,7 +103,7 @@ private:
 
             calcSum(rightChild);
 
-            handle.get();
+            handle.wait();
             interior->at(i) = value(leftChild) + value(rightChild);
         }
         // for the rest of levels, do it in the main thread
@@ -135,7 +135,10 @@ private:
                 );
 
             calcPrefixSums(rightChild, priorSum + value(leftChild), output);
-        } else {
+            handle.wait();
+        }
+
+        else {
             calcPrefixSums(leftChild, priorSum, output);
             calcPrefixSums(rightChild, priorSum + value(leftChild), output);
         }
