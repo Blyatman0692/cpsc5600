@@ -25,6 +25,7 @@ protected:
     const Data* data;
     Data* interior;
 
+    // binary tree related
     virtual int size() {
         return n - 1 + n;
     }
@@ -56,6 +57,17 @@ protected:
         return true;
     }
 
+    virtual int level(int i) {
+        int level = 0;
+        int x = i + 1;
+
+        while (x >>= 1) {
+            level++;
+        }
+
+        return level;
+    }
+
 };
 
 class SumHeap: public Heaper {
@@ -76,10 +88,30 @@ private:
             return;
         }
 
-        calcSum(left(i));
-        calcSum(right(i));
+        const int leftChild = left(i);
+        const int rightChild = right(i);
 
-        interior->at(i) = value(left(i)) + value(right(i));
+        // for the first 4 levels, fork a thread
+        if (level(i) < 4) {
+            auto handle = async(
+                launch::async,
+                &SumHeap::calcSum,
+                this,
+                leftChild
+                );
+
+            calcSum(rightChild);
+
+            handle.get();
+            interior->at(i) = value(leftChild) + value(rightChild);
+        }
+        // for the rest of levels, do it in the main thread
+        else {
+            calcSum(leftChild);
+            calcSum(rightChild);
+
+            interior->at(i) = value(leftChild) + value(rightChild);
+        }
     }
 
     void prefixSums(int i, int priorSum, Data* output) {
