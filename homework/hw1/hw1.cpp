@@ -6,7 +6,7 @@
 #include <vector>
 #include <iostream>
 using namespace std;
-const int N = 2<<26;  // FIXME must be power of 2 for now
+const int N = 1<<26;  // FIXME must be power of 2 for now
 
 typedef vector<int> Data;
 
@@ -55,6 +55,7 @@ protected:
         }
 
         return true;
+        // return right(i) >= (n-1) + n
     }
 
     virtual int level(int i) {
@@ -77,7 +78,7 @@ public:
     }
 
     void prefixSums(Data* output) {
-        prefixSums(0, 0, output);
+        calcPrefixSums(0, 0, output);
     }
 
 
@@ -114,7 +115,7 @@ private:
         }
     }
 
-    void prefixSums(int i, int priorSum, Data* output) {
+    void calcPrefixSums(int i, int priorSum, Data* output) {
         if (isLeaf(i)) {
             output->at(i - (n - 1)) = priorSum + value(i);
             return;
@@ -123,8 +124,21 @@ private:
         const int leftChild = left(i);
         const int rightChild = right(i);
 
-        prefixSums(leftChild, priorSum, output);
-        prefixSums(rightChild, priorSum + value(leftChild), output);
+        if (level(i) < 4) {
+            auto handle = async(
+                launch::async,
+                &SumHeap::calcPrefixSums,
+                this,
+                leftChild,
+                priorSum,
+                output
+                );
+
+            calcPrefixSums(rightChild, priorSum + value(leftChild), output);
+        } else {
+            calcPrefixSums(leftChild, priorSum, output);
+            calcPrefixSums(rightChild, priorSum + value(leftChild), output);
+        }
     }
 
 };
