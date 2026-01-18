@@ -115,26 +115,6 @@ protected:
     }
 
     /**
-     * @brief Compute the depth/level of a node in the conceptual tree.
-     *
-     * Root is level 0. For 0-based heap indexing, level(i) == floor(log2(i+1)).
-     * This is used to decide where to stop forking threads.
-     *
-     * @param i Node index.
-     * @return Level (depth) of node i.
-     */
-    virtual int level(int i) {
-        int level = 0;
-        int x = i + 1;
-
-        while (x >>= 1) {
-            level++;
-        }
-
-        return level;
-    }
-
-    /**
      * @brief Compute the smallest power of two >= n.
      *
      * Used to round an arbitrary input size up to a leaf count suitable for a complete
@@ -184,11 +164,20 @@ public:
      * @param output Pointer to caller-owned output array.
      */
     void prefixSums(Data* output) {
-        calcPrefixSums(0, 0, output);
+        calcPrefixSums(0, 0, 0, output);
     }
 
 
 private:
+    /**
+     * @brief Entry point to recursively compute subtree sums for interior nodes.
+     *
+     * @param i Node index -- always starts at 0.
+     */
+    void calcSum(int i) {
+        return calcSumHelper(i, 0);
+    }
+
     /**
      * @brief Recursively compute subtree sums for interior nodes.
      *
@@ -196,8 +185,9 @@ private:
      * dependency that a parent sum is computed only after both children are complete.
      *
      * @param i Node index.
+     * @param currLevel Node i's current level -- always starts at 0 for root node.
      */
-    void calcSum(int i) {
+    void calcSumHelper(int i, int currLevel) {
         // base case
         if (isLeaf(i)) {
             return;
@@ -207,23 +197,24 @@ private:
         const int rightChild = right(i);
 
         // for the first 4 levels, fork a thread
-        if (level(i) < 4) {
+        if (currLevel < 4) {
             auto handle = async(
                 launch::async,
-                &SumHeap::calcSum,
+                &SumHeap::calcSumHelper,
                 this,
-                leftChild
+                leftChild,
+                currLevel + 1
                 );
 
-            calcSum(rightChild);
+            calcSumHelper(rightChild, currLevel + 1);
 
             handle.wait();
             interior->at(i) = value(leftChild) + value(rightChild);
         }
         // for the lower levels, do it in the main thread
         else {
-            calcSum(leftChild);
-            calcSum(rightChild);
+            calcSumHelper(leftChild, currLevel + 1);
+            calcSumHelper(rightChild, currLevel + 1);
 
             interior->at(i) = value(leftChild) + value(rightChild);
         }
@@ -243,7 +234,7 @@ private:
      * @param priorSum Sum of elements before this subtree.
      * @param output Output array to fill.
      */
-    void calcPrefixSums(int i, int priorSum, Data* output) {
+    void calcPrefixSums(int i, int priorSum, int currLevel, Data* output) {
         if (isLeaf(i)) {
             const int k = i - (n - 1);
 
@@ -262,26 +253,28 @@ private:
         const int rightChild = right(i);
 
         // for the first 4 levels, fork a thread
-        if (level(i) < 4) {
+        if (currLevel < 4) {
             auto handle = async(
                 launch::async,
                 &SumHeap::calcPrefixSums,
                 this,
                 leftChild,
                 priorSum,
+                currLevel + 1,
                 output
                 );
 
-            calcPrefixSums(rightChild, priorSum + value(leftChild), output);
+            calcPrefixSums(rightChild, priorSum + value(leftChild),
+                currLevel + 1, output);
             handle.wait();
         }
         // for the lower levels, do it in the main thread
         else {
-            calcPrefixSums(leftChild, priorSum, output);
-            calcPrefixSums(rightChild, priorSum + value(leftChild), output);
+            calcPrefixSums(leftChild, priorSum, currLevel + 1, output);
+            calcPrefixSums(rightChild, priorSum + value(leftChild),
+                currLevel + 1, output);
         }
     }
-
 };
 
 int main() {
