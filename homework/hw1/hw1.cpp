@@ -21,8 +21,7 @@
 #include <vector>
 #include <iostream>
 using namespace std;
-// const int N = 100000000;
-const int N = 1<<26;
+const int N = 100000000;
 
 /**
  * @brief Input/output container type for the scan.
