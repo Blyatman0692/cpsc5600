@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Random;
 
 class SortThread implements Runnable {
     public SortThread(int p, int n) {
@@ -19,10 +20,10 @@ class SortThread implements Runnable {
 
                     if (ixj > i) {
                         if ((i & k) == 0 && data[i] > data[ixj]) {
-                            swap(data[i], data[ixj]);
+                            swap(i, ixj);
                         }
                         if ((i & k) != 0 && data[i] < data[ixj]) {
-                            swap(data[i], data[ixj]);
+                            swap(i, ixj);
 
                         }
                     }
@@ -31,12 +32,19 @@ class SortThread implements Runnable {
         }
     }
 
-    private int [] data;
+    private final int [] data;
     private final int n;
 
     private void swap(int i, int j) {
         int temp = data[i];
         data[i] = data[j];
         data[j] = temp;
+    }
+
+    public void fillWithRandomNum(int n) {
+        Random rand = new Random();
+        for (int i = 0; i < n; i++) {
+            data[i] = rand.nextInt();
+        }
     }
 }
