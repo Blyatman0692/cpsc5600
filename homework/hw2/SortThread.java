@@ -1,10 +1,11 @@
-import java.util.ArrayList;
-import java.util.Random;
+import java.util.concurrent.CyclicBarrier;
 
 class SortThread implements Runnable {
-    public SortThread(int p, int n) {
+    public SortThread(int id, int n, int [] data, CyclicBarrier barrier) {
+        this.id = id;
         this.n = n;
-        data = new int[n];
+        this.data = data;
+        this.barrier = barrier;
     }
 
     public void run() {
@@ -12,6 +13,7 @@ class SortThread implements Runnable {
         for (int k = 2; k <= n; k *= 2) {
             // distance between the two elements being compared
             for (int j = k / 2; j > 0; j /= 2) {
+
                 // iterate through the element inside the block
                 for (int i = 0; i < n; i++) {
 
@@ -34,17 +36,12 @@ class SortThread implements Runnable {
 
     private final int [] data;
     private final int n;
+    private final int id;
+    private CyclicBarrier barrier;
 
     private void swap(int i, int j) {
         int temp = data[i];
         data[i] = data[j];
         data[j] = temp;
-    }
-
-    public void fillWithRandomNum(int n) {
-        Random rand = new Random();
-        for (int i = 0; i < n; i++) {
-            data[i] = rand.nextInt();
-        }
     }
 }

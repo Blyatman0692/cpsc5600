@@ -1,11 +1,23 @@
+import java.util.Random;
+import java.util.concurrent.CyclicBarrier;
+
 public class BitonicSort{
+    static public void fillWithRandomNum(int[] data) {
+        Random rand = new Random();
+        for (int i = 0; i < data.length; i++) {
+            data[i] = rand.nextInt();
+        }
+    }
+
     public static void main(String[] args) {
         int p = Integer.parseInt(args[0]);
         int granularity = Integer.parseInt(args[1]);
         int n = 1 << 22;  // N = 2^22
         double seconds = 10.0;
 
-        SortThread sorter = new SortThread(0, n);
+        int [] data = new int[n];
+        Thread[] threads = new Thread[p];
+        CyclicBarrier barrier = new CyclicBarrier(p);
 
         int count = 0;
         long start = System.currentTimeMillis();
@@ -13,9 +25,12 @@ public class BitonicSort{
 
         while (System.currentTimeMillis() < end) {
             // TODO: fill array with random data
-            sorter.fillWithRandomNum(n);
+            fillWithRandomNum(data);
             // TODO: sort the array
-            sorter.run();
+            for (int i = 0; i < p; i++) {
+                threads[i] = new Thread(new SortThread(i, n, data, barrier));
+                threads[i].start();
+            }
             // TODO: (optional) verify it's sorted
             count++;
         }
