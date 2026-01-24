@@ -12,9 +12,11 @@ public class BitonicSort{
     public static void main(String[] args) {
         int p = Integer.parseInt(args[0]);
         int granularity = Integer.parseInt(args[1]);
-        int n = 1 << 22;  // N = 2^22
+        int n = 1 << 3;  // N = 2^22
         double seconds = 10.0;
 
+        int section = n / p ;
+        System.out.println("Each thread processes: " + section + " data");
         int [] data = new int[n];
         Thread[] threads = new Thread[p];
         CyclicBarrier barrier = new CyclicBarrier(p);
@@ -24,12 +26,20 @@ public class BitonicSort{
         long end = start + (long)(seconds * 1000);
 
         while (System.currentTimeMillis() < end) {
-            // TODO: fill array with random data
+            // fill array with random data
             fillWithRandomNum(data);
-            // TODO: sort the array
+            // sort the array
             for (int i = 0; i < p; i++) {
-                threads[i] = new Thread(new SortThread(i, n, data, barrier));
+                threads[i] = new Thread(new SortThread(i, n, section, data, barrier));
                 threads[i].start();
+            }
+
+            for (Thread t : threads) {
+                try {
+                    t.join();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
             // TODO: (optional) verify it's sorted
             count++;

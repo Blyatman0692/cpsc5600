@@ -1,11 +1,15 @@
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
 class SortThread implements Runnable {
-    public SortThread(int id, int n, int [] data, CyclicBarrier barrier) {
+    public SortThread(int id, int n, int section, int [] data, CyclicBarrier barrier) {
         this.id = id;
         this.n = n;
         this.data = data;
         this.barrier = barrier;
+
+        start = id * section;
+        end = start + section;
     }
 
     public void run() {
@@ -13,10 +17,8 @@ class SortThread implements Runnable {
         for (int k = 2; k <= n; k *= 2) {
             // distance between the two elements being compared
             for (int j = k / 2; j > 0; j /= 2) {
-
                 // iterate through the element inside the block
-                for (int i = 0; i < n; i++) {
-
+                for (int i = start; i < end; i++) {
                     // partner index
                     int ixj = i ^ j;
 
@@ -26,9 +28,17 @@ class SortThread implements Runnable {
                         }
                         if ((i & k) != 0 && data[i] < data[ixj]) {
                             swap(i, ixj);
-
                         }
                     }
+                }
+
+                // try-catch block to wait for all threads
+                try {
+                    System.out.println("Thread:" + id + " waiting.");
+                    barrier.await();
+                    System.out.println("Thread:" + id + " passed.");
+                } catch (BrokenBarrierException | InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
             }
         }
@@ -37,7 +47,9 @@ class SortThread implements Runnable {
     private final int [] data;
     private final int n;
     private final int id;
-    private CyclicBarrier barrier;
+    private final int start;
+    private final int end;
+    private final CyclicBarrier barrier;
 
     private void swap(int i, int j) {
         int temp = data[i];
