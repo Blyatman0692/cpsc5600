@@ -9,10 +9,20 @@ public class BitonicSort{
         }
     }
 
+    static public boolean verifySorted(int [] bitonicSorted) {
+        for (int i = 1; i < bitonicSorted.length; i++) {
+            if (bitonicSorted[i] < bitonicSorted[i - 1]) {
+                return false;
+            }
+
+        }
+        return true;
+    }
+
     public static void main(String[] args) {
         int p = Integer.parseInt(args[0]);
         int granularity = Integer.parseInt(args[1]);
-        int n = 1 << 3;  // N = 2^22
+        int n = 1 << 22;  // N = 2^22
         double seconds = 10.0;
 
         int section = n / p ;
@@ -30,18 +40,25 @@ public class BitonicSort{
             fillWithRandomNum(data);
             // sort the array
             for (int i = 0; i < p; i++) {
+                // initialize each thread and start
                 threads[i] = new Thread(new SortThread(i, n, section, data, barrier));
                 threads[i].start();
             }
-
+            // wait for all threads to finish
             for (Thread t : threads) {
                 try {
                     t.join();
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    throw new RuntimeException(e);
                 }
             }
-            // TODO: (optional) verify it's sorted
+            // (optional) verify it's sorted
+            if (verifySorted(data)) {
+                System.out.println(count + " verified to be sorted");
+            } else {
+                System.out.println(count + " sort failed");
+            }
+
             count++;
         }
 

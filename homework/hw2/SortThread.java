@@ -34,9 +34,9 @@ class SortThread implements Runnable {
 
                 // try-catch block to wait for all threads
                 try {
-                    System.out.println("Thread:" + id + " waiting.");
+                     // System.out.println("Thread:" + id + " waiting.");
                     barrier.await();
-                    System.out.println("Thread:" + id + " passed.");
+                    // System.out.println("Thread:" + id + " passed.");
                 } catch (BrokenBarrierException | InterruptedException e) {
                     throw new RuntimeException(e);
                 }
