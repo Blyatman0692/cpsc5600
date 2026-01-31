@@ -1,7 +1,30 @@
 import java.util.Random;
 import java.util.concurrent.CyclicBarrier;
 
+/**
+ * @author: Junwen Zheng
+ * @date: Jan 25, 2026
+ * @file: BitonicSort.java
+ *
+ * <p>Runs the loop-based (sorting-network) bitonic sort using {@link SortThread} workers.
+ * Each worker owns a contiguous slice of a shared {@code int[]} and syncs after each network column
+ * using a {@link CyclicBarrier} (granularity = 1).
+ *
+ * <p>Throughput results (GRANULARITY=1):
+ * <ul>
+ *   <li>P=1: Sorted 6 arrays (each: 4194304 elements) in 10121 ms</li>
+ *   <li>P=2: Sorted 12 arrays (each: 4194304 elements) in 10266 ms</li>
+ *   <li>P=4: Sorted 22 arrays (each: 4194304 elements) in 10315 ms</li>
+ *   <li>P=8: Sorted 36 arrays (each: 4194304 elements) in 10065 ms</li>
+ * </ul>
+ *
+ * <ul>
+ *   <li>Assumes {@code n} and {@code p} are power of two.</li>
+ *   <li>Additional finding: throughput peaked at {@code p = 8} due to overhead.</li>
+ * </ul>
+ */
 public class BitonicSort{
+    /** Fills the array with random 32-bit integers. */
     static public void fillWithRandomNum(int[] data) {
         Random rand = new Random();
         for (int i = 0; i < data.length; i++) {
@@ -9,16 +32,25 @@ public class BitonicSort{
         }
     }
 
+    /** Returns true if the array is sorted in nondecreasing order. */
     static public boolean verifySorted(int [] bitonicSorted) {
         for (int i = 1; i < bitonicSorted.length; i++) {
             if (bitonicSorted[i] < bitonicSorted[i - 1]) {
                 return false;
             }
-
         }
         return true;
     }
 
+    /**
+     * Entry point.
+     *
+     * <p>Args:
+     * <ul>
+     *   <li>{@code args[0]}: P (number of threads: power of 2)</li>
+     *   <li>{@code args[1]}: GRANULARITY (input only 1)</li>
+     * </ul>
+     */
     public static void main(String[] args) {
         int p = Integer.parseInt(args[0]);
         int granularity = Integer.parseInt(args[1]);
@@ -67,4 +99,3 @@ public class BitonicSort{
                 elapsed + " ms using " + p + " threads");
     }
 }
-
