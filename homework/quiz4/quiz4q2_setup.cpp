@@ -75,17 +75,51 @@ private:
     void scatterBuckets() {
         u_short *sendbuf = nullptr, *recvbuf = nullptr;  // nullptr allows delete to work for anyone
         int *sendcounts = nullptr, *displs = nullptr;
+        int buckets_per_proc = n / p;
 
         if (rank == ROOT) {
             // marshal data into sendbuf and set up sending side of message (ROOT only)
-            // FIXME
+            sendbuf = new u_short[n * (1 + 2 * MAX_BUCKET_SIZE)];
+            sendcounts = new int[p];
+            displs = new int[p];
+
+            int i = 0;  // index into sendbuf
+            for (int pi = 0; pi < p; pi++) {
+                displs[pi] = i;
+                int begin_bucket = pi * buckets_per_proc;
+                int end_bucket = begin_bucket + buckets_per_proc;
+
+                if (pi == p - 1) {
+                    end_bucket += n - buckets_per_proc * p;
+                }
+
+                for (int bi = begin_bucket; bi < end_bucket; bi++) {
+                    sendbuf[i++] = table[bi].size();
+                    for (const auto hash_entry : table[bi]) {
+                        sendbuf[i++] = hash_entry[0];
+                        sendbuf[i++] = hash_entry[1];
+                    }
+                }
+
+                // update the sendcounts for process pi
+                sendcounts[pi] = i - displs[pi];
+            }
         }
 
         // set this->m for my process
-        m = 0; // FIXME
+        if (rank == p - 1) {
+            m = buckets_per_proc + (n % p);
+        } else {
+            m = buckets_per_proc;
+        }
 
         // set up receiving side of message (everyone)
-        int recvcount = 0; // FIXME!
+        int recvcount = 0;
+
+        MPI_Scatter(sendcounts, 1, MPI_INT,
+            &recvcount, 1, MPI_INT,
+            ROOT, MPI_COMM_WORLD);
+
         recvbuf = new u_short[recvcount];
 
         MPI_Scatterv(sendbuf, sendcounts, displs, MPI_UNSIGNED_SHORT,
@@ -94,7 +128,17 @@ private:
 
         // unmarshal data from recvbuf into this->partition
         partition = new vector<array<u_short,2>>[m];  // calls default ctor for each
-        // FIXME!
+        int recv_idx = 0;
+        for (int bi = 0; bi < m; bi++) {
+            int k = recvbuf[recv_idx++];
+
+            for (int i = 0; i < k; i++) {
+                u_short one = recvbuf[recv_idx++];
+                u_short two = recvbuf[recv_idx++];
+                partition[bi].push_back({one, two});
+            }
+        }
+
 
         // free temp arrays
         delete[] sendbuf;
