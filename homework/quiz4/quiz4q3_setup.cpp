@@ -1,7 +1,9 @@
 /**
- * CPSC 5600, Quiz 4, Question 3 scaffolding
+ * CPSC 5600, Quiz 4, Question 3
  * Seattle U, Winter 2026
- * Kevin Lundeen
+ * Group 8
+ * Kamie Sullivan
+ * Junwen Zheng
  */
 
 #include <iostream>
