@@ -61,11 +61,38 @@ private:
 
         if (rank == ROOT) {
             // marshal data into sendbuf and set up sending side of message (ROOT only)
-            // FIXME
+            sendbuf = new u_int[n + 2 * OVERLAP];
+            for (int i = 0; i < OVERLAP; i++) {
+                sendbuf[i] = sendbuf[OVERLAP + n + i] = 0;
+            }
+
+            memcpy(&sendbuf[OVERLAP], data, n * sizeof(*data));
+
+            sendcounts = new int[p];
+            displs = new int[p];
+
+            const int ele_per_proc = n / p;
+
+            for (int pi = 0; pi < p; pi++) {
+                int begin = pi * ele_per_proc;
+
+                // each pi is responsible for its original elements + 2 overlaps
+                int len = ele_per_proc + 2 * OVERLAP;
+
+                // last rank gets the remainder
+                if (pi == p - 1) {
+                    len += n % p;
+                }
+
+                sendcounts[pi] = len;
+                displs[pi] = begin;
+            }
         }
 
         // set this->m for my process
-        m = 0; // FIXME
+        MPI_Scatter(sendcounts, 1, MPI_INT,
+            &m, 1, MPI_INT,
+            ROOT, MPI_COMM_WORLD);
 
         // set up receiving side of message (everyone)
         partition = new u_int[m];
