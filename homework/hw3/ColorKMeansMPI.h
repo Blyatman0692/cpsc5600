@@ -16,6 +16,9 @@ public:
         KMeansMPI<k,3>::fit(reinterpret_cast<std::array<u_char,3> *>(colors), n);
     }
 
+private:
+    using KMeansMPI<k, 3>::fit;
+
 protected:
     typedef std::array<u_char,3> Element;
     /**
