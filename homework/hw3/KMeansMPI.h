@@ -9,6 +9,7 @@
 #include <iostream>
 #include <set>
 #include <array>
+#include <mpi.h>
 
 template<int k, int d>
 class KMeansMPI {
@@ -40,49 +41,8 @@ public:
 
     }
 
-    virtual void fitWork(int rank) {
-        // prepare data
-        u_char *sendbuf = nullptr, *recvbuf = nullptr;
-        int *sendcounts_element = nullptr, *displs_element = nullptr;
-        int *sendcounts_bytes = nullptr, *displs_bytes = nullptr;
-        // send n to everyone
-        MPI_Bcast(&n, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
-        MPI_Comm_size(MPI_COMM_WORLD, &p);
-
-        if (rank == ROOT) {
-            sendcounts_element = new int[p];
-            displs_element = new int[p];
-
-            int element_per_proc = n / p;
-            int reminder = n % p;
-
-            for (int pi = 0; pi < p; pi++) {
-                sendcounts_element[pi] = element_per_proc;
-                displs_element[pi] = element_per_proc * pi;
-
-                if (pi == p - 1) {
-                    sendcounts_element[pi] += reminder;
-                }
-            }
-        }
-
-        MPI_Scatter(sendcounts_element, 1, MPI_INT,
-            &m, 1, MPI_INT,
-            ROOT, MPI_COMM_WORLD);
-
-        partition = new Element[m];
-
-        if (rank == ROOT) {
-            sendbuf = reinterpret_cast<u_char*>(elements);
-            for (int pi = 0; pi < m; pi++) {
-                sendcounts_bytes[pi] = sendcounts_element[pi] * d;
-                displs_bytes[pi] = displs_element[pi] * d;
-            }
-        }
-
-        MPI_Scatterv(sendbuf, sendcounts_bytes, displs_bytes, MPI_UNSIGNED_CHAR,
-            reinterpret_cast<u_char*>(partition), m * d, MPI_UNSIGNED_CHAR,
-            ROOT, MPI_COMM_WORLD);
+    virtual void fitWork(int my_rank) {
+        scatterElements();
     }
 
     /**
@@ -112,9 +72,82 @@ protected:
     Clusters clusters;                       // k clusters resulting from latest call to fit()
     std::vector<std::array<double,k>> dist;  // dist[i][j] is the distance from elements[i] to clusters[j].centroid
 
-    virtual void scatterPartition(int rank) {
+    virtual void scatterElements() {
+        const u_char *sendbuf = nullptr;
+        int *sendcounts_element = nullptr, *displs_element = nullptr;
+        int *sendcounts_bytes = nullptr, *displs_bytes = nullptr;
 
+        // read my rank
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        // send n to everyone
+        MPI_Bcast(&n, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
+        // read total number of processes
+        MPI_Comm_size(MPI_COMM_WORLD, &p);
 
+        V(cout << rank << " knows total number of elements: " << n
+            << " and total number of processes " << p << endl;)
+
+        if (rank == ROOT) {
+            sendcounts_element = new int[p];
+            displs_element = new int[p];
+
+            int element_per_proc = n / p;
+            int reminder = n % p;
+
+            for (int pi = 0; pi < p; pi++) {
+                sendcounts_element[pi] = element_per_proc;
+                displs_element[pi] = element_per_proc * pi;
+
+                if (pi == p - 1) {
+                    sendcounts_element[pi] += reminder;
+                }
+            }
+        }
+
+        // root sends how many elements each process should receive
+        MPI_Scatter(sendcounts_element, 1, MPI_INT,
+            &m, 1, MPI_INT,
+            ROOT, MPI_COMM_WORLD);
+
+        // every process initialize buffer to receive incoming elements
+        partition = new Element[m];
+        V(cout << rank << " will receive: " << m << " partition elements" << endl;)
+
+        if (rank == ROOT) {
+            sendbuf = reinterpret_cast<const u_char*>(elements);
+
+            V(
+            unsigned long checksum = 0;
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < d; j++) {
+                    checksum += elements[i][j];
+                }
+            }
+            cout << "root " << rank << " n = " << n << " checksum = " << checksum << endl;
+            )
+
+            sendcounts_bytes = new int[p];
+            displs_bytes = new int[p];
+
+            for (int pi = 0; pi < p; pi++) {
+                sendcounts_bytes[pi] = sendcounts_element[pi] * d;
+                displs_bytes[pi] = displs_element[pi] * d;
+            }
+        }
+
+        MPI_Scatterv(sendbuf, sendcounts_bytes, displs_bytes, MPI_UNSIGNED_CHAR,
+            reinterpret_cast<u_char*>(partition), m * d, MPI_UNSIGNED_CHAR,
+            ROOT, MPI_COMM_WORLD);
+
+        V(
+            unsigned long checksum = 0;
+            for (int i = 0; i < m; i++) {
+                for (int j = 0; j < d; j++) {
+                    checksum += partition[i][j];
+                }
+            }
+            cout << "rank " << rank << " m = " << m << " checksum = " << checksum << endl;
+            )
     }
 
     /**
