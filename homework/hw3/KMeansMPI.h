@@ -45,6 +45,7 @@ public:
         scatterElements();
         dist.resize(m);
         reseedClusters();
+        updateDistances();
     }
 
     /**
@@ -152,6 +153,8 @@ protected:
             )
     }
 
+
+
     /**
      * Get the initial cluster centroids.
      * Default implementation here is to just pick k elements at random from the element
@@ -188,10 +191,10 @@ protected:
      * Place into this->dist which is a k-vector of distances from each element to the kth centroid.
      */
     virtual void updateDistances() {
-        for (int i = 0; i < n; i++) {
-            V(cout<<"distances for "<<i<<"(";for(int x=0;x<d;x++)printf("%02x",elements[i][x]);)
+        for (int i = 0; i < m; i++) {
+            V(cout<<"distances for "<<i<<"(";for(int x=0;x<d;x++)printf("%02x",partition[i][x]);)
             for (int j = 0; j < k; j++) {
-                dist[i][j] = distance(clusters[j].centroid, elements[i]);
+                dist[i][j] = distance(clusters[j].centroid, partition[i]);
                 V(cout<<" " << dist[i][j];)
             }
             V(cout<<endl;)
