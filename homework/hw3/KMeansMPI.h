@@ -43,6 +43,8 @@ public:
 
     virtual void fitWork(int my_rank) {
         scatterElements();
+        dist.resize(m);
+        reseedClusters();
     }
 
     /**
@@ -158,14 +160,26 @@ protected:
      */
     virtual void reseedClusters() {
         std::vector<int> seeds;
-        std::vector<int> candidates(n);
+        std::vector<int> candidates(m);
         std::iota(candidates.begin(), candidates.end(), 0);
         auto random = std::mt19937{std::random_device{}()};
         // Note that we need C++20 for std::sample
         std::sample(candidates.begin(), candidates.end(), back_inserter(seeds), k, random);
+
+        V(cout << rank << " is running reseedClusters: " << endl;)
+
         for (int i = 0; i < k; i++) {
-            clusters[i].centroid = elements[seeds[i]];
+            clusters[i].centroid = partition[seeds[i]];
             clusters[i].elements.clear();
+
+            V(
+                cout << "cluster: " << i << " centroid is: " << endl;
+                for (int j = 0; j < d; j++) {
+                    const u_char c = clusters[i].centroid[j];
+                    cout << static_cast<unsigned int>(c) << " ";
+                }
+                cout << endl;
+            )
         }
     }
 
