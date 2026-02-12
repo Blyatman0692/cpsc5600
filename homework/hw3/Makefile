@@ -19,7 +19,7 @@ hw3.o : hw3.cpp Color.h ColorKMeansMPI.h KMeansMPI.h
 	mpic++ $(CPPFLAGS) $< -c -o $@
 
 hw3 : hw3.o Color.o
-	mpic++ $(CPPFLAGS) hw5.o Color.o -o $@
+	mpic++ $(CPPFLAGS) hw3.o Color.o -o $@
 
 run_hw3 : hw3
 	mpirun -n 2 ./hw3
