@@ -36,7 +36,6 @@ public:
     virtual void fit(const Element *data, int data_n) {
         elements = data;
         n = data_n;
-        dist.resize(n);
         fitWork(ROOT);
 
     }
@@ -79,6 +78,9 @@ protected:
     Element *partition;
     int m = 0;
     int p = 1;
+
+    std::array<int, k> localCounts{};
+    std::array<double, k * d> localSums{};
 
     const Element *elements = nullptr;      // set of elements to classify into k categories (supplied to latest call to fit())
     int n = 0;                               // number of elements in this->elements
@@ -252,16 +254,34 @@ protected:
             clusters[j].centroid = Element{};
             clusters[j].elements.clear();
         }
-        // for each element, find its closest cluster
+
+        // reinitialize local data
+        localCounts.fill(0);
+        localSums.fill(0.0);
+
+        // iterate through all the elements assigned to me
         for (int i = 0; i < m; i++) {
             int min = 0;
+
+            // iterate through dist and find the closest cluster min
             for (int j = 1; j < k; j++) {
                 if (dist[i][j] < dist[i][min]) {
                     min = j;
                 }
             }
+
+            // number of elements in min cluster++
+            localCounts[min]++;
+
+            // accumulate sum for each dimension
+            for (int dim = 0; dim < d; dim++) {
+                // cluster index min * number of dimensions = starting index of sums
+                localSums[min * d + dim] += partition[i][dim];
+            }
         }
     }
+
+
 
     /**
      * Method to update a centroid with an additional element(s)
