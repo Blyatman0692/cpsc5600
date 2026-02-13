@@ -17,7 +17,7 @@ public:
     typedef std::array<u_char,d> Element;
     class Cluster;
     typedef std::array<Cluster,k> Clusters;
-    const int MAX_FIT_STEPS = 2;
+    const int MAX_FIT_STEPS = 1;
 
     const bool VERBOSE = true;  // set to true for debugging output
 #define V(stuff) if(VERBOSE) {using namespace std; stuff}
@@ -51,11 +51,12 @@ public:
         int generations = 0;
 
         while (generations++ < MAX_FIT_STEPS && prior != clusters) {
+            V(cout << rank << " working on generation " << generations << endl;)
             updateDistances();
-            prior = clusters;
-            updateClusters();
-            mergeClusters();
-            bcastCentroids();
+            // prior = clusters;
+            // updateClusters();
+            // mergeClusters();
+            // bcastCentroids();
         }
     }
 
@@ -94,6 +95,7 @@ protected:
 
     // mpi related
     virtual void scatterElements() {
+        V(cout << rank << " scatterElements" << endl;)
         const u_char *sendbuf = nullptr;
         int *sendcounts_element = nullptr, *displs_element = nullptr;
         int *sendcounts_bytes = nullptr, *displs_bytes = nullptr;
@@ -105,8 +107,6 @@ protected:
         // read total number of processes
         MPI_Comm_size(MPI_COMM_WORLD, &p);
 
-        V(cout << rank << " knows total number of elements: " << n
-            << " and total number of processes " << p << endl;)
 
         if (rank == ROOT) {
             sendcounts_element = new int[p];
@@ -123,6 +123,21 @@ protected:
                     sendcounts_element[pi] += reminder;
                 }
             }
+
+            V(
+                cout << "scatterElemetns params: " << endl;
+                cout << "n = " << n << " p = " << p << endl;
+                cout << "sendcounts_element: " << endl;
+                for (int i = 0; i < p; i++) {
+                    cout << sendcounts_element[i] << " ";
+                }
+                cout << endl;
+                cout << "displs_element: " << endl;
+                for (int i = 0; i < p; i++) {
+                    cout << displs_element[i] << " ";
+                }
+                cout << endl;
+            )
         }
 
         // root sends how many elements each process should receive
@@ -144,7 +159,7 @@ protected:
                     checksum += elements[i][j];
                 }
             }
-            cout << "root " << rank << " n = " << n << " checksum = " << checksum << endl;
+            cout << "root " << " checksum = " << checksum << endl;
             )
 
             sendcounts_bytes = new int[p];
@@ -167,7 +182,7 @@ protected:
                     checksum += partition[i][j];
                 }
             }
-            cout << "rank " << rank << " m = " << m << " checksum = " << checksum << endl;
+            cout << rank << " checksum = " << checksum << endl;
             )
 
         delete[] sendbuf;
@@ -185,28 +200,31 @@ protected:
      * @return list of clusters made by using k random elements as the initial centroids
      */
     virtual void reseedClusters() {
-        std::vector<int> seeds;
-        std::vector<int> candidates(m);
-        std::iota(candidates.begin(), candidates.end(), 0);
-        auto random = std::mt19937{std::random_device{}()};
-        // Note that we need C++20 for std::sample
-        std::sample(candidates.begin(), candidates.end(), back_inserter(seeds), k, random);
+        V(cout << rank << " is at reseedClusters" << endl;)
+        if (rank == ROOT) {
+            V(cout << rank << " is reseeding clusters: " << endl;)
+            std::vector<int> seeds;
+            std::vector<int> candidates(n);
+            std::iota(candidates.begin(), candidates.end(), 0);
+            auto random = std::mt19937{std::random_device{}()};
+            // Note that we need C++20 for std::sample
+            std::sample(candidates.begin(), candidates.end(), back_inserter(seeds), k, random);
 
-        V(cout << rank << " is running reseedClusters: " << endl;)
-
-        for (int i = 0; i < k; i++) {
-            clusters[i].centroid = partition[seeds[i]];
-            clusters[i].elements.clear();
-
-            V(
-                cout << "cluster: " << i << " centroid is: " << endl;
-                for (int j = 0; j < d; j++) {
-                    const u_char c = clusters[i].centroid[j];
-                    cout << static_cast<unsigned int>(c) << " ";
-                }
-                cout << endl;
-            )
+            for (int i = 0; i < k; i++) {
+                clusters[i].centroid = elements[seeds[i]];
+                clusters[i].elements.clear();
+                // V(
+                //     cout << "cluster: " << i << " centroid is: " << endl;
+                //     for (int j = 0; j < d; j++) {
+                //         const u_char c = clusters[i].centroid[j];
+                //         cout << static_cast<unsigned int>(c) << " ";
+                //     }
+                //     cout << endl;
+                // )
+            }
         }
+
+        bcastCentroids();
     }
 
     /**
@@ -280,11 +298,12 @@ protected:
     }
 
     virtual void bcastCentroids() {
-        V(cout << rank << "is running bcastCentroids" << endl;)
+        V(cout << rank << " is at bcastCentroids" << endl;)
         int count = k * d;
         auto *buffer = new u_char[count];
 
         if (rank == ROOT) {
+            V(cout << rank << " is marshalling centroids" << endl;)
             int i = 0;
             for (int j = 0; j < k; j++) {
                 for (int jd = 0; jd < d; jd++) {
@@ -297,6 +316,7 @@ protected:
             ROOT, MPI_COMM_WORLD);
 
         if (rank != ROOT) {
+            V(cout << rank << " is unmarshalling centroids" << endl;)
             int i = 0;
             for (int j = 0; j < k; j++) {
                 for (int jd = 0; jd < d; jd++) {
