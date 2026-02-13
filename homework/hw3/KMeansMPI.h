@@ -17,7 +17,7 @@ public:
     typedef std::array<u_char,d> Element;
     class Cluster;
     typedef std::array<Cluster,k> Clusters;
-    const int MAX_FIT_STEPS = 300;
+    const int MAX_FIT_STEPS = 2;
 
     const bool VERBOSE = true;  // set to true for debugging output
 #define V(stuff) if(VERBOSE) {using namespace std; stuff}
@@ -44,8 +44,18 @@ public:
     virtual void fitWork(int my_rank) {
         scatterElements();
         dist.resize(m);
+
         reseedClusters();
-        updateDistances();
+        Clusters prior = clusters;
+        prior[0].centroid[0]++;
+
+        int generations = 0;
+
+        while (generations++ < MAX_FIT_STEPS) {
+
+            updateDistances();
+        }
+
     }
 
     /**
@@ -75,6 +85,7 @@ protected:
     Clusters clusters;                       // k clusters resulting from latest call to fit()
     std::vector<std::array<double,k>> dist;  // dist[i][j] is the distance from elements[i] to clusters[j].centroid
 
+    // mpi related
     virtual void scatterElements() {
         const u_char *sendbuf = nullptr;
         int *sendcounts_element = nullptr, *displs_element = nullptr;
@@ -151,8 +162,39 @@ protected:
             }
             cout << "rank " << rank << " m = " << m << " checksum = " << checksum << endl;
             )
+
+        delete[] sendbuf;
+        delete[] sendcounts_element;
+        delete[] sendcounts_bytes;
+        delete[] displs_element;
+        delete[] displs_bytes;
     }
 
+    virtual void bcastCentroids() {
+        V(cout << rank << "is running bcastCentroids" << endl;)
+        int count = k * d;
+        auto *buffer = new u_char[count];
+
+        if (rank == ROOT) {
+            int i = 0;
+            for (int j = 0; j < k; j++) {
+                for (int jd = 0; jd < d; jd++) {
+                    buffer[i++] = clusters[j].centroid;
+                }
+            }
+        }
+
+        MPI_Bcast(buffer, count, MPI_UNSIGNED,
+            ROOT, MPI_COMM_WORLD);
+
+        if (rank != ROOT) {
+
+
+        }
+
+
+        delete [] buffer;
+    }
 
 
     /**
@@ -210,14 +252,14 @@ protected:
             clusters[j].centroid = Element{};
             clusters[j].elements.clear();
         }
-        // for each element, put it in its closest cluster (updating the cluster's centroid as we go)
-        for (int i = 0; i < n; i++) {
+        // for each element, find its closest cluster
+        for (int i = 0; i < m; i++) {
             int min = 0;
-            for (int j = 1; j < k; j++)
-                if (dist[i][j] < dist[i][min])
+            for (int j = 1; j < k; j++) {
+                if (dist[i][j] < dist[i][min]) {
                     min = j;
-            accum(clusters[min].centroid, clusters[min].elements.size(), elements[i], 1);
-            clusters[min].elements.push_back(i);
+                }
+            }
         }
     }
 
