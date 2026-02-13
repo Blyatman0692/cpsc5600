@@ -37,14 +37,13 @@ public:
         elements = data;
         n = data_n;
         fitWork(ROOT);
-
     }
 
-    virtual void fitWork(int my_rank) {
-        scatterElements();
+    virtual void fitWork(int rank) {
+        scatterElements(rank);
         dist.resize(m);
 
-        reseedClusters();
+        reseedClusters(rank);
         Clusters prior = clusters;
         prior[0].centroid[0]++;
 
@@ -53,10 +52,10 @@ public:
         while (generations++ < MAX_FIT_STEPS && prior != clusters) {
             V(cout << rank << " working on generation " << generations << endl;)
             updateDistances();
-            // prior = clusters;
-            // updateClusters();
-            // mergeClusters();
-            // bcastCentroids();
+            prior = clusters;
+            updateClusters();
+            mergeClusters(rank);
+            bcastCentroids(rank);
         }
     }
 
@@ -77,7 +76,6 @@ public:
 
 protected:
     const int ROOT = 0;
-    int rank = ROOT;
     Element *partition;
     int m = 0;
     int p = 1;
@@ -94,14 +92,12 @@ protected:
     std::vector<std::array<double,k>> dist;  // dist[i][j] is the distance from elements[i] to clusters[j].centroid
 
     // mpi related
-    virtual void scatterElements() {
+    virtual void scatterElements(int rank) {
         V(cout << rank << " scatterElements" << endl;)
         const u_char *sendbuf = nullptr;
         int *sendcounts_element = nullptr, *displs_element = nullptr;
         int *sendcounts_bytes = nullptr, *displs_bytes = nullptr;
 
-        // read my rank
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         // send n to everyone
         MPI_Bcast(&n, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         // read total number of processes
@@ -185,7 +181,6 @@ protected:
             cout << rank << " checksum = " << checksum << endl;
             )
 
-        delete[] sendbuf;
         delete[] sendcounts_element;
         delete[] sendcounts_bytes;
         delete[] displs_element;
@@ -199,7 +194,7 @@ protected:
      * set
      * @return list of clusters made by using k random elements as the initial centroids
      */
-    virtual void reseedClusters() {
+    virtual void reseedClusters(int rank) {
         V(cout << rank << " is at reseedClusters" << endl;)
         if (rank == ROOT) {
             V(cout << rank << " is reseeding clusters: " << endl;)
@@ -224,7 +219,7 @@ protected:
             }
         }
 
-        bcastCentroids();
+        bcastCentroids(rank);
     }
 
     /**
@@ -275,10 +270,11 @@ protected:
                 // cluster index min * number of dimensions = starting index of sums
                 localSums[min * d + dim] += partition[i][dim];
             }
+            clusters[min].elements.push_back(i);
         }
     }
 
-    virtual void mergeClusters() {
+    virtual void mergeClusters(int rank) {
         MPI_Reduce(localCounts.data(), globalCounts.data(), k,
             MPI_INT, MPI_SUM, ROOT, MPI_COMM_WORLD);
 
@@ -289,15 +285,15 @@ protected:
             for (int i = 0; i < k; i++) {
                 if (globalCounts[i] > 0) {
                     for (int dim = 0; dim < d; dim++) {
-                        clusters[i].centroid[dim] = (u_char)
-                        globalSums[i * d + dim] / globalCounts[i];
+                        double mean = globalSums[i * d + dim] / globalCounts[i];
+                        clusters[i].centroid[dim] = mean;
                     }
                 }
             }
         }
     }
 
-    virtual void bcastCentroids() {
+    virtual void bcastCentroids(int rank) {
         V(cout << rank << " is at bcastCentroids" << endl;)
         int count = k * d;
         auto *buffer = new u_char[count];
