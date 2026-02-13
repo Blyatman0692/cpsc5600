@@ -50,11 +50,13 @@ public:
 
         int generations = 0;
 
-        while (generations++ < MAX_FIT_STEPS) {
-
+        while (generations++ < MAX_FIT_STEPS && prior != clusters) {
             updateDistances();
+            prior = clusters;
+            updateClusters();
+            mergeClusters();
+            bcastCentroids();
         }
-
     }
 
     /**
@@ -81,6 +83,9 @@ protected:
 
     std::array<int, k> localCounts{};
     std::array<double, k * d> localSums{};
+
+    std::array<int, k> globalCounts{};
+    std::array<double, k * d> globalSums{};
 
     const Element *elements = nullptr;      // set of elements to classify into k categories (supplied to latest call to fit())
     int n = 0;                               // number of elements in this->elements
@@ -172,32 +177,6 @@ protected:
         delete[] displs_bytes;
     }
 
-    virtual void bcastCentroids() {
-        V(cout << rank << "is running bcastCentroids" << endl;)
-        int count = k * d;
-        auto *buffer = new u_char[count];
-
-        if (rank == ROOT) {
-            int i = 0;
-            for (int j = 0; j < k; j++) {
-                for (int jd = 0; jd < d; jd++) {
-                    buffer[i++] = clusters[j].centroid;
-                }
-            }
-        }
-
-        MPI_Bcast(buffer, count, MPI_UNSIGNED,
-            ROOT, MPI_COMM_WORLD);
-
-        if (rank != ROOT) {
-
-
-        }
-
-
-        delete [] buffer;
-    }
-
 
     /**
      * Get the initial cluster centroids.
@@ -279,6 +258,54 @@ protected:
                 localSums[min * d + dim] += partition[i][dim];
             }
         }
+    }
+
+    virtual void mergeClusters() {
+        MPI_Reduce(localCounts.data(), globalCounts.data(), k,
+            MPI_INT, MPI_SUM, ROOT, MPI_COMM_WORLD);
+
+        MPI_Reduce(localSums.data(), globalSums.data(), k * d,
+            MPI_DOUBLE, MPI_SUM, ROOT, MPI_COMM_WORLD);
+
+        if (rank == ROOT) {
+            for (int i = 0; i < k; i++) {
+                if (globalCounts[i] > 0) {
+                    for (int dim = 0; dim < d; dim++) {
+                        clusters[i].centroid[dim] = (u_char)
+                        globalSums[i * d + dim] / globalCounts[i];
+                    }
+                }
+            }
+        }
+    }
+
+    virtual void bcastCentroids() {
+        V(cout << rank << "is running bcastCentroids" << endl;)
+        int count = k * d;
+        auto *buffer = new u_char[count];
+
+        if (rank == ROOT) {
+            int i = 0;
+            for (int j = 0; j < k; j++) {
+                for (int jd = 0; jd < d; jd++) {
+                    buffer[i++] = clusters[j].centroid[jd];
+                }
+            }
+        }
+
+        MPI_Bcast(buffer, count, MPI_UNSIGNED_CHAR,
+            ROOT, MPI_COMM_WORLD);
+
+        if (rank != ROOT) {
+            int i = 0;
+            for (int j = 0; j < k; j++) {
+                for (int jd = 0; jd < d; jd++) {
+                    clusters[j].centroid[jd] = buffer[i++];
+                }
+            }
+        }
+
+        delete [] buffer;
     }
 
 
