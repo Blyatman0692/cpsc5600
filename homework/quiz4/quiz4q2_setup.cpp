@@ -117,6 +117,7 @@ private:
 
         // set up receiving side of message (everyone)
         int recvcount = 0;
+        // or recvcount = m * (1 + 2 * MAX_BUCKET_SIZE)
 
         MPI_Scatter(sendcounts, 1, MPI_INT,
             &recvcount, 1, MPI_INT,
