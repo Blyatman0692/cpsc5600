@@ -17,7 +17,7 @@ public:
     typedef std::array<u_char,d> Element;
     class Cluster;
     typedef std::array<Cluster,k> Clusters;
-    const int MAX_FIT_STEPS = 1;
+    const int MAX_FIT_STEPS = 2;
 
     const bool VERBOSE = true;  // set to true for debugging output
 #define V(stuff) if(VERBOSE) {using namespace std; stuff}
@@ -57,6 +57,8 @@ public:
             mergeClusters(rank);
             bcastCentroids(rank);
         }
+
+        delete[] partition;
     }
 
     /**
@@ -76,15 +78,12 @@ public:
 
 protected:
     const int ROOT = 0;
-    Element *partition;
+    Element *partition = nullptr;
     int m = 0;
     int p = 1;
 
-    std::array<int, k> localCounts{};
-    std::array<double, k * d> localSums{};
-
-    std::array<int, k> globalCounts{};
-    std::array<double, k * d> globalSums{};
+    int *localCounts = nullptr;
+    double *localSums = nullptr;
 
     const Element *elements = nullptr;      // set of elements to classify into k categories (supplied to latest call to fit())
     int n = 0;                               // number of elements in this->elements
@@ -248,8 +247,8 @@ protected:
         }
 
         // reinitialize local data
-        localCounts.fill(0);
-        localSums.fill(0.0);
+        localCounts = new int[k]();
+        localSums = new double[k * d]();
 
         // iterate through all the elements assigned to me
         for (int i = 0; i < m; i++) {
@@ -270,15 +269,23 @@ protected:
                 // cluster index min * number of dimensions = starting index of sums
                 localSums[min * d + dim] += partition[i][dim];
             }
-            clusters[min].elements.push_back(i);
+            // clusters[min].elements.push_back(i);
         }
     }
 
     virtual void mergeClusters(int rank) {
-        MPI_Reduce(localCounts.data(), globalCounts.data(), k,
+        int *globalCounts = nullptr;
+        double *globalSums = nullptr;
+
+        if (rank == ROOT) {
+            globalCounts = new int[k]();
+            globalSums = new double[k * d]();
+        }
+
+        MPI_Reduce(localCounts, globalCounts, k,
             MPI_INT, MPI_SUM, ROOT, MPI_COMM_WORLD);
 
-        MPI_Reduce(localSums.data(), globalSums.data(), k * d,
+        MPI_Reduce(localSums, globalSums, k * d,
             MPI_DOUBLE, MPI_SUM, ROOT, MPI_COMM_WORLD);
 
         if (rank == ROOT) {
@@ -286,11 +293,17 @@ protected:
                 if (globalCounts[i] > 0) {
                     for (int dim = 0; dim < d; dim++) {
                         double mean = globalSums[i * d + dim] / globalCounts[i];
-                        clusters[i].centroid[dim] = mean;
+                        clusters[i].centroid[dim] = (u_char)mean;
                     }
                 }
             }
+
+            delete[] globalCounts;
+            delete[] globalSums;
         }
+
+        delete[] localCounts;
+        delete[] localSums;
     }
 
     virtual void bcastCentroids(int rank) {
@@ -321,25 +334,9 @@ protected:
             }
         }
 
-        delete [] buffer;
+        delete[] buffer;
     }
 
-
-
-    /**
-     * Method to update a centroid with an additional element(s)
-     * @param centroid   accumulating mean of the elements in a cluster so far
-     * @param centroid_n number of elements in the cluster so far
-     * @param addend     another element(s) to be added; if multiple, addend is their mean
-     * @param addend_n   number of addends represented in the addend argument
-     */
-    virtual void accum(Element& centroid, int centroid_n, const Element& addend, int addend_n) const {
-        int new_n = centroid_n + addend_n;
-        for (int i = 0; i < d; i++) {
-            double new_total = (double) centroid[i] * centroid_n + (double) addend[i] * addend_n;
-            centroid[i] = (u_char)(new_total / new_n);
-        }
-    }
 
     /**
      * Subclass-supplied method to calculate the distance between two elements
