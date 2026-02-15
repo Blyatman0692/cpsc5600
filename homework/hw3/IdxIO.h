@@ -3,6 +3,8 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <cstdint>
+#include <istream>
 
 constexpr int kRows = 28;
 constexpr int kCols = 28;
