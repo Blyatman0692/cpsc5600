@@ -1,5 +1,5 @@
 CPPFLAGS = -std=c++20 -Wall -Werror -pedantic -ggdb
-PROGRAMS = kmean_color_test hw3
+PROGRAMS = kmean_color_test hw3 emnist
 
 all : $(PROGRAMS)
 
@@ -33,5 +33,24 @@ bigger_test : hw3
 biggest_test : hw3
 	mpirun -n 32 ./hw3
 
+# ===== extra credit =====
+emnist.o : emnist.cpp IdxIO.h KMeansMPI.h
+	mpic++ $(CPPFLAGS) $< -c -o $@
+
+IdxIO.o : IdxIO.cpp IdxIO.h
+	mpic++ $(CPPFLAGS) $< -c -o $@
+
+emnist : emnist.o IdxIO.o
+	mpic++ $(CPPFLAGS) emnist.o IdxIO.o -o $@
+
+run_emnist : emnist
+	mpirun -n 2 ./emnist emnist-digits-train-images-idx3-ubyte emnist-digits-train-labels-idx1-ubyte
+
+bigger_test_emnist : emnist
+	mpirun -n 10 ./emnist emnist-digits-train-images-idx3-ubyte emnist-digits-train-labels-idx1-ubyte
+
+biggest_test_emnist : emnist
+	mpirun -n 32 ./emnist emnist-digits-train-images-idx3-ubyte emnist-digits-train-labels-idx1-ubyte
+
 clean :
-	rm -f $(PROGRAMS) Color.o kmean_color_test.o hw3.o
+	rm -f $(PROGRAMS) Color.o kmean_color_test.o hw3.o emnist.o IdxIO.o
