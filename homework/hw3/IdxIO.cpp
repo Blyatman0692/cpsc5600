@@ -14,26 +14,6 @@ std::uint32_t read_be_u32(std::istream& in) {
             std::uint32_t(b[3]);
 }
 
-// EMNIST often needs transpose/flip to match typical MNIST orientation.
-// This helper does: transpose (r,c)->(c,r) then flip horizontally.
-// If you don’t care about visualization, clustering still “works” without it,
-// but fixing it makes results more interpretable.
-Image fix_emnist_image_orientation(const Image& src) {
-    Image dst{};
-    // src is row-major [r*cols + c] with rows=28 cols=28
-    // transpose + horizontal flip:
-    // dst[r,c] = src[c, 27-r]  (one common EMNIST correction)
-    for (int r = 0; r < kRows; ++r) {
-        for (int c = 0; c < kCols; ++c) {
-            int dst_idx = r * kCols + c;
-            int src_r = c;
-            int src_c = (kCols - 1) - r;
-            int src_idx = src_r * kCols + src_c;
-            dst[dst_idx] = src[src_idx];
-        }
-    }
-    return dst;
-}
 
 IdxImages read_idx3_images(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
