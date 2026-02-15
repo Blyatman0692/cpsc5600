@@ -30,5 +30,8 @@ valgrind : hw3
 bigger_test : hw3
 	mpirun -n 10 ./hw3
 
+biggest_test : hw3
+	mpirun -n 32 ./hw3
+
 clean :
 	rm -f $(PROGRAMS) Color.o kmean_color_test.o hw3.o
