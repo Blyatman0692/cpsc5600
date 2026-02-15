@@ -58,7 +58,10 @@ public:
             bcastCentroids(rank);
         }
 
+        buildMembership(rank);
+
         delete[] partition;
+        partition = nullptr;
     }
 
     /**
@@ -85,6 +88,10 @@ protected:
     int *localCounts = nullptr;
     double *localSums = nullptr;
 
+    int *sendcounts_element = nullptr;
+    int *displs_element = nullptr;
+
+
     const Element *elements = nullptr;      // set of elements to classify into k categories (supplied to latest call to fit())
     int n = 0;                               // number of elements in this->elements
     Clusters clusters;                       // k clusters resulting from latest call to fit()
@@ -94,7 +101,6 @@ protected:
     virtual void scatterElements(int rank) {
         V(cout << rank << " scatterElements" << endl;)
         const u_char *sendbuf = nullptr;
-        int *sendcounts_element = nullptr, *displs_element = nullptr;
         int *sendcounts_bytes = nullptr, *displs_bytes = nullptr;
 
         // send n to everyone
@@ -180,9 +186,8 @@ protected:
             cout << rank << " checksum = " << checksum << endl;
             )
 
-        delete[] sendcounts_element;
+
         delete[] sendcounts_bytes;
-        delete[] displs_element;
         delete[] displs_bytes;
     }
 
@@ -227,12 +232,12 @@ protected:
      */
     virtual void updateDistances() {
         for (int i = 0; i < m; i++) {
-            V(cout<<"distances for "<<i<<"(";for(int x=0;x<d;x++)printf("%02x",partition[i][x]);)
+            // V(cout<<"distances for "<<i<<"(";for(int x=0;x<d;x++)printf("%02x",partition[i][x]);)
             for (int j = 0; j < k; j++) {
                 dist[i][j] = distance(clusters[j].centroid, partition[i]);
-                V(cout<<" " << dist[i][j];)
+                // V(cout<<" " << dist[i][j];)
             }
-            V(cout<<endl;)
+            // V(cout<<endl;)
         }
     }
 
@@ -240,12 +245,6 @@ protected:
      * Recalculate the current clusters based on the new distances shown in this->dist.
      */
     virtual void updateClusters() {
-        // reinitialize all the clusters
-        for (int j = 0; j < k; j++) {
-            clusters[j].centroid = Element{};
-            clusters[j].elements.clear();
-        }
-
         // reinitialize local data
         localCounts = new int[k]();
         localSums = new double[k * d]();
@@ -269,7 +268,6 @@ protected:
                 // cluster index min * number of dimensions = starting index of sums
                 localSums[min * d + dim] += partition[i][dim];
             }
-            // clusters[min].elements.push_back(i);
         }
     }
 
@@ -292,8 +290,8 @@ protected:
             for (int i = 0; i < k; i++) {
                 if (globalCounts[i] > 0) {
                     for (int dim = 0; dim < d; dim++) {
-                        double mean = globalSums[i * d + dim] / globalCounts[i];
-                        clusters[i].centroid[dim] = (u_char)mean;
+                        const double mean = globalSums[i * d + dim] / globalCounts[i];
+                        clusters[i].centroid[dim] = static_cast<u_char>(mean);
                     }
                 }
             }
@@ -304,6 +302,51 @@ protected:
 
         delete[] localCounts;
         delete[] localSums;
+        localCounts = nullptr;
+        localSums = nullptr;
+    }
+
+    virtual void buildMembership(int rank) {
+        int *localAffiliation = new int[m]();
+        int *globalAffiliation = nullptr;
+
+        if (rank == ROOT) {
+            globalAffiliation = new int[n]();
+        }
+
+        for (int i = 0; i < m; i++) {
+            int min = 0;
+            for (int j = 1; j < k; j++) {
+                if (dist[i][j] < dist[i][min]) {
+                    min = j;
+                }
+            }
+            localAffiliation[i] = min;
+        }
+
+        MPI_Gatherv(
+            localAffiliation, m, MPI_INT,
+            globalAffiliation, sendcounts_element, displs_element, MPI_INT,
+            ROOT, MPI_COMM_WORLD
+            );
+
+        if (rank == ROOT) {
+            for (auto &c : clusters) {
+                c.elements.clear();
+            }
+
+            for (int i = 0; i < n; i++) {
+                clusters[globalAffiliation[i]].elements.push_back(i);
+            }
+
+            delete[] globalAffiliation;
+            delete[] sendcounts_element;
+            delete[] displs_element;
+            sendcounts_element = nullptr;
+            displs_element = nullptr;
+        }
+
+        delete[] localAffiliation;
     }
 
     virtual void bcastCentroids(int rank) {
