@@ -8,7 +8,7 @@
 #include <vector>
 
 template <int k>
-class MNISTKMeansMPI : public KMeansMPI<k, 784> {
+class EMNISTKMeansMPI : public KMeansMPI<k, 784> {
 public:
     using Element = std::array<u_char, 784>;
 
