@@ -1,6 +1,8 @@
-//
-// Created by Junwen Zheng on 2/9/26.
-//
+/**
+* @file KMeansMPI.h - MPI-parallel implementation of the k-means algorithm
+* @author Junwen Zheng
+* @date Feb 15, 2026
+*/
 
 #pragma once  // only process the first time it is included; ignore otherwise
 #include <vector>
@@ -11,13 +13,35 @@
 #include <array>
 #include <mpi.h>
 
+/**
+ * MPI-parallel implementation of the naive k-means clustering algorithm.
+ *
+ * Template parameters:
+ *  - k: number of clusters
+ *  - d: dimensionality (bytes per element)
+ *
+ * Data model:
+ *  - Each element is a fixed-size byte vector (Element).
+ *  - Centroids are stored as Element as well (byte-wise means).
+ *
+ * Execution model:
+ *  - ROOT (rank 0) calls fit(data, n) and participates in fitWork.
+ *  - Non-root ranks call fitWork(rank) to help compute centroids.
+ *  - Final membership (clusters[*].elements) is built once after convergence.
+ *
+ * Note:
+ * Memory leaks are detected from Valgrind, but it's likely due to MPI routines:
+ *  - Out of many test runs with different number of data size and different number
+ *    of workers, the memory leak size are constant
+ *  - All the manually allocated containers have a corresponding delete[] operation.
+ */
 template<int k, int d>
 class KMeansMPI {
 public:
     typedef std::array<u_char,d> Element;
     class Cluster;
     typedef std::array<Cluster,k> Clusters;
-    const int MAX_FIT_STEPS = 2;
+    const int MAX_FIT_STEPS = 300;
 
     const bool VERBOSE = true;  // set to true for debugging output
 #define V(stuff) if(VERBOSE) {using namespace std; stuff}
@@ -31,18 +55,38 @@ public:
     }
 
     /**
-     * fit() is the main k-means algorithm
-    */
+     * Run k-means clustering on the provided data.
+     *
+     * ROOT should call this method exactly once. It records the global data pointer/length,
+     * then enters fitWork(ROOT) so ROOT participates in the computation.
+     *
+     * @param data pointer to n Elements (owned by caller; must stay valid for the duration of fit)
+     * @param data_n number of elements in the data array
+     */
     virtual void fit(const Element *data, int data_n) {
         elements = data;
         n = data_n;
         fitWork(ROOT);
     }
 
+    /**
+     * Worker entry point for all ranks (including ROOT).
+     *
+     * This method:
+     *  1) scatters the global input into a per-rank partition,
+     *  2) iterates until convergence (or MAX_FIT_STEPS),
+     *  3) builds final membership on ROOT only,
+     *  4) frees per-rank temporary storage.
+     *
+     * @param rank this process's MPI rank in MPI_COMM_WORLD
+     */
     virtual void fitWork(int rank) {
         scatterElements(rank);
+
+        // Allocate local distance table: m rows by k distances each.
         dist.resize(m);
 
+        // Initialize centroids on ROOT, then broadcast to all ranks.
         reseedClusters(rank);
         Clusters prior = clusters;
         prior[0].centroid[0]++;
@@ -58,6 +102,7 @@ public:
             bcastCentroids(rank);
         }
 
+        // Build final membership lists once after convergence.
         buildMembership(rank);
 
         delete[] partition;
@@ -73,31 +118,79 @@ public:
         Element centroid;  // the current center (mean) of the elements in the cluster
         std::vector<int> elements;
 
-        // equality is just the centroids, regarless of elements
+        // equality is just the centroids, regardless of elements
         friend bool operator==(const Cluster& left, const Cluster& right) {
             return left.centroid == right.centroid;  // equality means the same centroid, regardless of elements
         }
     };
 
 protected:
+    /** Root process rank (always 0 in MPI_COMM_WORLD). */
     const int ROOT = 0;
+
+    /**
+     * Local partition of the input data owned by this MPI rank.
+     * Allocated in scatterElements() as an array of m Elements and freed at the end of fitWork().
+     */
     Element *partition = nullptr;
+
+    /** Number of Elements in this rank's local partition. */
     int m = 0;
+
+    /** Total number of MPI processes in MPI_COMM_WORLD. */
     int p = 1;
 
+    /**
+     * Per-rank cluster counts computed during updateClusters().
+     * localCounts[j] = number of local elements assigned to cluster j.
+     */
     int *localCounts = nullptr;
+
+    /**
+     * Per-rank cluster sums computed during updateClusters().
+     * localSums[j*d + dim] = sum of coordinate 'dim' over local elements assigned to cluster j.
+     */
     double *localSums = nullptr;
 
+    /**
+     * ROOT-only scatter layout (in Elements).
+     * sendcounts_element[r] = number of Elements sent to rank r.
+     */
     int *sendcounts_element = nullptr;
+
+    /**
+     * ROOT-only scatter layout (in Elements).
+     * displs_element[r] = starting global Element index for rank r within the original data array.
+     */
     int *displs_element = nullptr;
 
+    /** Pointer to the full input array (ROOT-owned memory; provided to fit()). */
+    const Element *elements = nullptr;
 
-    const Element *elements = nullptr;      // set of elements to classify into k categories (supplied to latest call to fit())
-    int n = 0;                               // number of elements in this->elements
-    Clusters clusters;                       // k clusters resulting from latest call to fit()
-    std::vector<std::array<double,k>> dist;  // dist[i][j] is the distance from elements[i] to clusters[j].centroid
+    /** Total number of Elements in the full input array. */
+    int n = 0;
 
-    // mpi related
+    /** k clusters resulting from the latest call to fit(). */
+    Clusters clusters;
+
+    /**
+     * Local distance table.
+     * dist[i][j] is the distance from this rank's partition[i] to clusters[j].centroid.
+     * Size is m rows by k columns.
+     */
+    std::vector<std::array<double,k>> dist;
+
+    /**
+     * Scatter the global input array (elements[0..n)) from ROOT to all ranks.
+     *
+     * Each rank receives m Elements into `partition`, where m is determined by an even split
+     * and any remainder assigned to the last rank.
+     *
+     * ROOT also stores sendcounts_element/displs_element (in units of Elements) for later use
+     * by buildMembership().
+     *
+     * @param rank this process's MPI rank
+     */
     virtual void scatterElements(int rank) {
         V(cout << rank << " scatterElements" << endl;)
         const u_char *sendbuf = nullptr;
@@ -163,6 +256,7 @@ protected:
             cout << "root " << " checksum = " << checksum << endl;
             )
 
+            // Convert Element counts/displacements into byte counts/displacements for MPI_Scatterv.
             sendcounts_bytes = new int[p];
             displs_bytes = new int[p];
 
@@ -172,6 +266,7 @@ protected:
             }
         }
 
+        // Scatter raw bytes and reinterpret them as Elements on the receiving side.
         MPI_Scatterv(sendbuf, sendcounts_bytes, displs_bytes, MPI_UNSIGNED_CHAR,
             reinterpret_cast<u_char*>(partition), m * d, MPI_UNSIGNED_CHAR,
             ROOT, MPI_COMM_WORLD);
@@ -194,8 +289,7 @@ protected:
 
     /**
      * Get the initial cluster centroids.
-     * Default implementation here is to just pick k elements at random from the element
-     * set
+     * Pick k elements at random from the element set
      * @return list of clusters made by using k random elements as the initial centroids
      */
     virtual void reseedClusters(int rank) {
@@ -212,14 +306,14 @@ protected:
             for (int i = 0; i < k; i++) {
                 clusters[i].centroid = elements[seeds[i]];
                 clusters[i].elements.clear();
-                // V(
-                //     cout << "cluster: " << i << " centroid is: " << endl;
-                //     for (int j = 0; j < d; j++) {
-                //         const u_char c = clusters[i].centroid[j];
-                //         cout << static_cast<unsigned int>(c) << " ";
-                //     }
-                //     cout << endl;
-                // )
+                V(
+                    cout << "cluster: " << i << " centroid is: " << endl;
+                    for (int j = 0; j < d; j++) {
+                        const u_char c = clusters[i].centroid[j];
+                        cout << static_cast<unsigned int>(c) << " ";
+                    }
+                    cout << endl;
+                )
             }
         }
 
@@ -227,22 +321,26 @@ protected:
     }
 
     /**
-     * Calculate the distance from each element to each centroid.
-     * Place into this->dist which is a k-vector of distances from each element to the kth centroid.
+     * Compute the distance from each local element in `partition` to each cluster centroid.
+     * Results are stored in `dist` (m x k).
      */
     virtual void updateDistances() {
         for (int i = 0; i < m; i++) {
-            // V(cout<<"distances for "<<i<<"(";for(int x=0;x<d;x++)printf("%02x",partition[i][x]);)
+            V(cout<<"distances for "<<i<<"(";for(int x=0;x<d;x++)printf("%02x",partition[i][x]);)
             for (int j = 0; j < k; j++) {
                 dist[i][j] = distance(clusters[j].centroid, partition[i]);
-                // V(cout<<" " << dist[i][j];)
+                V(cout<<" " << dist[i][j];)
             }
-            // V(cout<<endl;)
+            V(cout<<endl;)
         }
     }
 
     /**
-     * Recalculate the current clusters based on the new distances shown in this->dist.
+     * Assign each local element to its nearest centroid and accumulate per-cluster statistics.
+     *
+     * Produces:
+     *  - localCounts[j] = number of local elements assigned to cluster j
+     *  - localSums[j*d + dim] = sum of byte dimension 'dim' for cluster j over local elements
      */
     virtual void updateClusters() {
         // reinitialize local data
@@ -271,6 +369,14 @@ protected:
         }
     }
 
+    /**
+     * Merge per-rank cluster statistics into global centroids.
+     *
+     * Uses MPI_Reduce with MPI_SUM to accumulate counts/sums on ROOT, then ROOT updates
+     * each centroid as mean = globalSums / globalCounts.
+     *
+     * @param rank this process's MPI rank
+     */
     virtual void mergeClusters(int rank) {
         int *globalCounts = nullptr;
         double *globalSums = nullptr;
@@ -306,6 +412,15 @@ protected:
         localSums = nullptr;
     }
 
+    /**
+     * Build final cluster membership lists after convergence.
+     *
+     * Each rank computes a local cluster ID for each of its m elements, then ROOT gathers
+     * these IDs into a global affiliation array (size n) using MPI_Gatherv and the same
+     * scatter displacements. ROOT then populates clusters[c].elements with global indices.
+     *
+     * @param rank this process's MPI rank
+     */
     virtual void buildMembership(int rank) {
         int *localAffiliation = new int[m]();
         int *globalAffiliation = nullptr;
@@ -349,6 +464,12 @@ protected:
         delete[] localAffiliation;
     }
 
+    /**
+     * Broadcast the current centroids from ROOT to all ranks.
+     * Centroids are marshaled into a contiguous byte buffer of size k*d.
+     *
+     * @param rank this process's MPI rank
+     */
     virtual void bcastCentroids(int rank) {
         V(cout << rank << " is at bcastCentroids" << endl;)
         int count = k * d;
