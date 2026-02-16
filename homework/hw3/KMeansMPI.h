@@ -28,6 +28,12 @@
  *  - ROOT (rank 0) calls fit(data, n) and participates in fitWork.
  *  - Non-root ranks call fitWork(rank) to help compute centroids.
  *  - Final membership (clusters[*].elements) is built once after convergence.
+ *
+ * Note:
+ * Memory leaks are detected from Valgrind, but it's likely due to MPI routines:
+ *  - Out of many test runs with different number of data size and different number
+ *    of workers, the memory leak size are constant
+ *  - All the manually allocated containers have a corresponding delete[] operation.
  */
 template<int k, int d>
 class KMeansMPI {

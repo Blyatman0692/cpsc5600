@@ -43,6 +43,8 @@ IdxIO.o : IdxIO.cpp IdxIO.h
 emnist : emnist.o IdxIO.o
 	mpic++ $(CPPFLAGS) emnist.o IdxIO.o -o $@
 
+# Please download emnist-digits-train-images-idx3-ubyte and emnist-digits-train-labels-idx1-ubyte
+# make sure they are decompressed and resides in the same directory as emnist.cpp, IdxIO.h, IdxIO.cpp
 run_emnist : emnist
 	mpirun -n 2 ./emnist emnist-digits-train-images-idx3-ubyte emnist-digits-train-labels-idx1-ubyte
 
